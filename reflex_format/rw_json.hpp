@@ -20,6 +20,15 @@
 #include <rapidjson/stringbuffer.h>
 #include "rw_traits_type.hpp"
 
+#if (QT_VERSION < 0x060000)
+#include <QtCore/QList>
+#include <QtCore/QMap>
+#include <QtCore/QSet>
+#include <QtCore/QSharedPointer>
+#include <QtCore/QString>
+#include <QtCore/QVector>
+#endif
+
 namespace reflexjson {
 using namespace reflextraits;
 
@@ -331,6 +340,122 @@ public:
         }
         return this->convert(key, *val);
     }
+
+#if (QT_VERSION < 0x060000)
+    bool convert(const char* key, QString &qval)
+    {
+        std::string val;
+        const rapidjson::Value *v = get_val(key);
+        if (nullptr == v)
+            return false;
+        try
+        {
+            if (!v->IsString())
+                throw reflex_exption("key type error");
+            val = v->GetString();
+        }
+        catch(const std::exception& e)
+        {
+            printf("key<%s>:%s\n", key, e.what());
+            return false;
+        }
+        qval = string2QString(val);
+        return true;
+    }
+
+    template<typename _type>
+    bool convert(const char* key, QVector<_type>& val)
+    {
+        JsonReader doc_val;
+        JsonReader* obj = get_obj(key, &doc_val);
+        if (nullptr == obj)
+            return false;
+        size_t num = obj->size();
+        val.resize(num);
+        for (size_t i = 0; i < num; ++i)
+        {
+            (*obj)[i].convert(nullptr, val[i]);
+        }
+        return true;
+    }
+
+    template<typename _type>
+    bool convert(const char* key, QList<_type>& val)
+    {
+        JsonReader doc_val;
+        JsonReader* obj = get_obj(key, &doc_val);
+        if (nullptr == obj)
+            return false;
+        val.clear(); // NOTE: 取决于业务
+        size_t num = obj->size();
+        for (size_t i = 0; i < num; ++i)
+        {
+            _type elem;
+            (*obj)[i].convert(nullptr, elem);
+            val.emplace_back(elem);
+        }
+        return true;
+    }
+
+    template<typename _type>
+    bool convert(const char* key, QList<_type *>& val)
+    {
+        JsonReader doc_val;
+        JsonReader* obj = get_obj(key, &doc_val);
+        if (nullptr == obj)
+            return false;
+        val.clear(); // NOTE: 取决于业务
+        size_t num = obj->size();
+        for (size_t i = 0; i < num; ++i)
+        {
+            _type elem = new _type;
+            (*obj)[i].convert(nullptr, *elem);
+            val.emplace_back(elem);
+        }
+        return true;
+    }
+
+    template<typename _type>
+    bool convert(const char* key, QSet<_type>& val)
+    {
+        JsonReader doc_val;
+        JsonReader* obj = get_obj(key, &doc_val);
+        if (nullptr == obj)
+            return false;
+        size_t num = obj->size();
+        for (size_t i = 0; i < num; ++i)
+        {
+            _type elem{};
+            (*obj)[i].convert(nullptr, elem);
+            val.insert(elem);
+        }
+        return true;
+    }
+
+    template<typename _type>
+    bool convert(const char* key, QMap<QString, _type>& val)
+    {
+        JsonReader doc_val;
+        JsonReader* obj = get_obj(key, &doc_val);
+        if (nullptr == obj)
+            return false;
+        for (auto data = obj->begin(); data; data = data.next())
+        {
+            _type elem;
+            data.convert(nullptr, elem);
+            val[QString::fromStdString(data.key())] = elem;
+        }
+        return true;
+    }
+
+    template<typename _type>
+    bool convert(const char* key, QSharedPointer<_type>& val) {
+        if (nullptr == val.get())
+            val.reset(new _type());
+        return this->convert(key, *val);
+    }
+#endif
+
     template<typename _type, std::enable_if_t<has_member_condition_v<_type>, bool> = true>
     bool convert(const char* key, _type& val)
     {
@@ -617,6 +742,88 @@ public:
         this->array_end();
         return *this;
     }
+
+#if (QT_VERSION < 0x060000)
+    JsonWriter& convert(const char* key, const QString& qval)
+    {
+        std::string val = reflextraits::QString2string(qval);
+        data_set_key(key);
+        json_writer_ != nullptr ? json_writer_->String(val) : json_pretty_->String(val);
+        return *this;
+    }
+
+    template<typename _type>
+    JsonWriter& convert(const char* key, const QVector<_type>& val)
+    {
+        data_set_key(key);
+        this->array_begin();
+        for (size_t i = 0; i < val.size(); ++i)
+        {
+            this->convert("", val[i]);
+        }
+        this->array_end();
+        return *this;
+    }
+
+    template<typename _type>
+    JsonWriter& convert(const char* key, const QList<_type>& val)
+    {
+        data_set_key(key);
+        this->array_begin();
+        for (typename QList<_type>::const_iterator it = val.begin(); it != val.end(); ++it)
+        {
+            this->convert("", *it);
+        }
+        this->array_end();
+        return *this;
+    }
+
+    template<typename _type>
+    JsonWriter& convert(const char* key, const QList<_type*>& val)
+    {
+        data_set_key(key);
+        this->array_begin();
+        for (typename QList<_type*>::const_iterator it = val.begin(); it != val.end(); ++it)
+        {
+            this->convert("", **it);
+        }
+        this->array_end();
+        return *this;
+    }
+
+    template<typename _type>
+    JsonWriter& convert(const char* key, const QSet<_type>& data)
+    {
+        data_set_key(key);
+        this->array_begin();
+        for (typename QSet<_type>::const_iterator it = data.begin(); it != data.end(); ++it)
+        {
+            this->convert("", *it);
+        }
+        this->array_end();
+        return *this;
+    }
+
+    template <typename _type>
+    void convert(const char* key, const QMap<QString, _type>& data)
+    {
+        data_set_key(key);
+        this->object_begin();
+        for (typename QMap<QString, _type>::const_iterator iter = data.begin(); iter != data.end(); ++iter)
+        {
+            this->convert(iter.key().toStdString().c_str(), iter.value());
+        }
+        this->object_end();
+    }
+
+    template<typename _type>
+    void convert(const char* key, const QSharedPointer<_type>& val) {
+        if (nullptr == val.get())
+            return;
+        this->convert(key, *val);
+    }
+#endif
+
     template <typename _type>
     void convert(const char* key, const std::map<std::string, _type>& data)
     {

@@ -114,5 +114,18 @@ public:
 private:
     std::string err_msg_;
 };
+
+#if (QT_VERSION < 0x060000)
+#include <QtCore/QString>
+#include <string>
+static std::string QString2string(const QString &str){
+    QByteArray arr = str.toLocal8Bit();
+    return std::string(arr);
+}
+static QString string2QString(const std::string &str) {
+    return QString::fromLocal8Bit(str.c_str());
+}
+#endif
+
 }
 #endif//RW_TRAITS_TYPE_HPP_
